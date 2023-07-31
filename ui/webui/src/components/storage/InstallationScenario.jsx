@@ -22,7 +22,12 @@ import {
     FormGroup,
     Radio,
     Title,
+    Popover,
 } from "@patternfly/react-core";
+
+import { Table, Td, Th, Tr } from "@patternfly/react-table";
+
+import { OutlinedQuestionCircleIcon } from "@patternfly/react-icons";
 
 import { helpEraseAll, helpUseFreeSpace, helpMountPointMapping } from "./HelpAutopartOptions.jsx";
 
@@ -145,6 +150,58 @@ export const getDefaultScenario = () => {
     return scenarios.filter(s => s.default)[0];
 };
 
+const MountPointAssignmentInfo = () => {
+    const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+
+    const onPopoverClose = () => {
+        setIsPopoverOpen(false);
+    };
+
+    const onPopoverToggle = () => {
+        setIsPopoverOpen(!isPopoverOpen);
+    };
+
+    const partitions = [{
+        partition: "/",
+        minimum_size: "30 GB"
+    }, {
+        partition: "/boot",
+        minimum_size: "512 MB"
+    }];
+
+    const columnNames = {
+        partition: "Partition",
+        minimum_size: "Minimum size"
+    };
+
+    return (
+        <span>
+            <Popover
+              headerContent={_("The following partitions are required: ")}
+              hasAutoWidth
+              bodyContent={
+                  <Table variant="compact">
+                      <Tr>
+                          <Th><b>{columnNames.partition}</b></Th>
+                          <Th><b>{columnNames.minimum_size}</b></Th>
+                      </Tr>
+                      {partitions.map(part =>
+                          <Tr key={part.partition}>
+                              <Td dataLabel={columnNames.partition}>{part.partition}</Td>
+                              <Td dataLabel={columnNames.minimum_size}>{part.minimum_size}</Td>
+                          </Tr>)}
+                  </Table>
+              }
+              isVisible={isPopoverOpen}
+              onClose={onPopoverClose}
+              position="right"
+            >
+                <OutlinedQuestionCircleIcon onMouseEnter={onPopoverToggle} onMouseLeave={onPopoverToggle} />
+            </Popover>
+        </span>
+    );
+};
+
 const InstallationScenarioSelector = ({ deviceData, selectedDisks, idPrefix, scenarios, storageScenarioId, setStorageScenarioId, setIsFormValid }) => {
     const [selectedScenario, setSelectedScenario] = useState();
     const [scenarioAvailability, setScenarioAvailability] = useState(Object.fromEntries(
@@ -243,6 +300,8 @@ const InstallationScenarioSelector = ({ deviceData, selectedDisks, idPrefix, sce
                   {selectedDisks.length > 0 && scenarioAvailability[scenario.id].reason &&
                   <span className={idPrefix + "-scenario-disabled-reason"}>
                       {scenarioAvailability[scenario.id].reason}
+                      {!scenarioAvailability[scenario.id].available &&
+                          <MountPointAssignmentInfo />}
                   </span>}
                   {selectedDisks.length > 0 && <span className={idPrefix + "-scenario-disabled-shorthint"}>{scenarioAvailability[scenario.id].shortHint}</span>}
               </>
