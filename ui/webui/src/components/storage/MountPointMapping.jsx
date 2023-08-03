@@ -21,7 +21,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import {
     Alert,
     Button,
-    Checkbox,
+    Switch,
     Flex,
     FlexItem,
     HelperText,
@@ -207,11 +207,10 @@ const FormatColumn = ({ deviceData, handleRequestChange, idPrefix, request }) =>
 
     return (
         <Flex>
-            <Checkbox
-              id={idPrefix + "-checkbox"}
+            <Switch
+              id={idPrefix + "-switch"}
               isChecked={request.reformat}
               isDisabled={isRootMountPoint}
-              label={_("Reformat")}
               onChange={checked => handleRequestChange(request["mount-point"], request["device-spec"], request["request-id"], checked)}
             />
             {isRootMountPoint &&

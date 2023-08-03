@@ -369,7 +369,7 @@ class TestStorageMountPoints(anacondalib.VirtInstallMachineCase):
 
     def check_reformat(self, row, checked):
         checked_selector = "input:checked" if checked else "input:not(:checked)"
-        self.browser.wait_visible(f"{self.table_row(row)} td[data-label='Reformat'] {checked_selector}")
+        self.browser.click(f"{self.table_row(row)} td[data-label='Reformat'] {checked_selector}")
 
     def check_select_disabled(self, row):
         self.browser.wait_visible(f"{self.table_row(row)} td[data-label='Device'] .pf-c-select__toggle.pf-m-disabled")
