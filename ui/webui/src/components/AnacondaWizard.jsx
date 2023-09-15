@@ -15,7 +15,7 @@
  * along with This program; If not, see <http://www.gnu.org/licenses/>.
  */
 import cockpit from "cockpit";
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import {
     ActionList,
@@ -27,16 +27,15 @@ import {
     PageSection,
     PageSectionTypes,
     PageSectionVariants,
-    Stack
-} from "@patternfly/react-core";
-import {
+    Stack,
+    useWizardContext,
     Wizard,
-    WizardFooter,
-    WizardContextConsumer
-} from "@patternfly/react-core/deprecated";
+    WizardFooterWrapper,
+    WizardStep
+} from "@patternfly/react-core";
 
 import { InstallationMethod } from "./storage/InstallationMethod.jsx";
-import { getScenario, getDefaultScenario } from "./storage/InstallationScenario.jsx";
+import { getDefaultScenario, getScenario } from "./storage/InstallationScenario.jsx";
 import { MountPointMapping } from "./storage/MountPointMapping.jsx";
 import { DiskEncryption, getStorageEncryptionState } from "./storage/DiskEncryption.jsx";
 import { InstallationLanguage } from "./localization/InstallationLanguage.jsx";
@@ -44,10 +43,7 @@ import { InstallationProgress } from "./installation/InstallationProgress.jsx";
 import { ReviewConfiguration, ReviewConfigurationConfirmModal } from "./review/ReviewConfiguration.jsx";
 import { exitGui } from "../helpers/exit.js";
 import { usePageLocation } from "hooks";
-import {
-    applyStorage,
-    resetPartitioning,
-} from "../apis/storage.js";
+import { applyStorage, resetPartitioning, } from "../apis/storage.js";
 
 const _ = cockpit.gettext;
 const N_ = cockpit.noop;
@@ -56,6 +52,7 @@ export const AnacondaWizard = ({ dispatch, isBootIso, osRelease, storageData, lo
     const [isFormValid, setIsFormValid] = useState(false);
     const [stepNotification, setStepNotification] = useState();
     const [isInProgress, setIsInProgress] = useState(false);
+    const [isInstallationProgress, setInstallationProgress] = useState(false);
     const [storageEncryption, setStorageEncryption] = useState(getStorageEncryptionState());
     const [storageScenarioId, setStorageScenarioId] = useState(window.sessionStorage.getItem("storage-scenario-id") || getDefaultScenario().id);
     const [reusePartitioning, setReusePartitioning] = useState(false);
@@ -125,13 +122,6 @@ export const AnacondaWizard = ({ dispatch, isBootIso, osRelease, storageData, lo
             },
             id: "installation-review",
             label: _("Review and install"),
-        },
-        {
-            component: InstallationProgress,
-            id: "installation-progress",
-            data: {
-                osRelease
-            }
         }
     ];
 
@@ -166,93 +156,112 @@ export const AnacondaWizard = ({ dispatch, isBootIso, osRelease, storageData, lo
         return stepIdx <= currentStepIdx;
     };
 
+    const componentProps = {
+        setIsFormValid,
+        onCritFail,
+        onAddErrorNotification,
+        stepNotification,
+        isInProgress,
+        storageEncryption,
+        setStorageEncryption,
+        storageScenarioId,
+        isBootIso,
+        osRelease,
+        setStorageScenarioId: (scenarioId) => {
+            window.sessionStorage.setItem("storage-scenario-id", scenarioId);
+            setStorageScenarioId(scenarioId);
+        },
+    };
+
     const createSteps = (stepsOrder) => {
-        const steps = stepsOrder.filter(s => !s.isHidden).map(s => {
-            let step = ({
-                id: s.id,
+        return stepsOrder.filter(s => !s.isHidden).map(s => {
+            let stepProps = {
+                ariaLabel: `${title} content`,
                 name: s.label,
+                id: s.id,
                 stepNavItemProps: { id: s.id },
+                ...(s.isExpandable && { isExpandable: true }),
                 canJumpTo: canJumpToStep(s.id, currentStepId),
                 isFinishedStep: isFinishedStep(s.id),
-            });
+            };
             if (s.component) {
-                step = ({
-                    ...step,
-                    component: (
+                stepProps = {
+                    ...stepProps,
+                    children: (
                         <s.component
                           idPrefix={s.id}
-                          setIsFormValid={setIsFormValid}
-                          onCritFail={onCritFail}
-                          onAddErrorNotification={onAddErrorNotification}
-                          stepNotification={stepNotification}
-                          isInProgress={isInProgress}
-                          storageEncryption={storageEncryption}
-                          setStorageEncryption={setStorageEncryption}
-                          storageScenarioId={storageScenarioId}
-                          isBootIso={isBootIso}
-                          osRelease={osRelease}
-                          setStorageScenarioId={(scenarioId) => {
-                              window.sessionStorage.setItem("storage-scenario-id", scenarioId);
-                              setStorageScenarioId(scenarioId);
-                          }}
+                          {...componentProps}
                           {...s.data}
                         />
-                    ),
-                });
+                    )
+                };
             } else if (s.steps) {
-                step.steps = createSteps(s.steps);
+                const subSteps = createSteps(s.steps);
+                stepProps = {
+                    ...stepProps,
+                    steps: subSteps
+                };
             }
-            return step;
+            return (
+                <WizardStep key={s.id} {...stepProps} />
+            );
         });
-        return steps;
     };
     const steps = createSteps(stepsOrder);
 
-    const goToStep = (newStep, prevStep) => {
-        if (prevStep.prevId !== newStep.id) {
+    const goToStep = (currentStep, prevStep) => {
+        if (prevStep.prevId !== currentStep.id) {
             // first reset validation state to default
             setIsFormValid(false);
         }
 
         // Reset the applied partitioning when going back from review page
-        if (prevStep.prevId === "installation-review" && newStep.id !== "installation-progress") {
+        if (prevStep.prevId === "installation-review" && currentStep.id !== "installation-progress") {
             setIsInProgress(true);
             resetPartitioning()
                     .then(
-                        () => cockpit.location.go([newStep.id]),
+                        () => cockpit.location.go([currentStep.id]),
                         () => onCritFail({ context: cockpit.format(N_("Error was hit when going back from $0."), prevStep.prevName) })
                     )
                     .always(() => setIsInProgress(false));
         } else {
-            cockpit.location.go([newStep.id]);
+            cockpit.location.go([currentStep.id]);
         }
     };
 
     return (
         <PageSection type={PageSectionTypes.wizard} variant={PageSectionVariants.light}>
-            <Wizard
-              id="installation-wizard"
-              footer={<Footer
-                onCritFail={onCritFail}
-                isFormValid={isFormValid}
-                partitioning={storageData.partitioning?.path}
-                setIsFormValid={setIsFormValid}
-                setStepNotification={setStepNotification}
-                isInProgress={isInProgress}
-                setIsInProgress={setIsInProgress}
-                storageEncryption={storageEncryption}
-                storageScenarioId={storageScenarioId}
-                isBootIso={isBootIso}
-              />}
-              hideClose
-              mainAriaLabel={`${title} content`}
-              navAriaLabel={`${title} steps`}
-              onBack={goToStep}
-              onGoToStep={goToStep}
-              onNext={goToStep}
-              steps={steps}
-              isNavExpandable
-            />
+            {!isInstallationProgress
+                ? (
+                    <Wizard
+                      id="installation-wizard"
+                      footer={<Footer
+                        onCritFail={onCritFail}
+                        isFormValid={isFormValid}
+                        partitioning={storageData.partitioning?.path}
+                        setIsFormValid={setIsFormValid}
+                        setStepNotification={setStepNotification}
+                        isInProgress={isInProgress}
+                        setIsInProgress={setIsInProgress}
+                        setInstallationProgress={setInstallationProgress}
+                        storageEncryption={storageEncryption}
+                        storageScenarioId={storageScenarioId}
+                        isBootIso={isBootIso}
+                      />}
+                      nav={{ "aria-label": `${title} steps` }}
+                      onStepChange={((event, currentStep, prevStep) => goToStep(currentStep, prevStep))}
+                      isVisitRequired
+                    >
+                        {steps}
+                    </Wizard>
+                )
+                : (
+                    <InstallationProgress
+                      idPrefix="installation-progress"
+                      {...componentProps}
+                      onRelease
+                    />
+                )}
         </PageSection>
     );
 };
@@ -267,12 +276,14 @@ const Footer = ({
     setIsInProgress,
     storageEncryption,
     storageScenarioId,
+    setInstallationProgress,
     isBootIso
 }) => {
     const [nextWaitsConfirmation, setNextWaitsConfirmation] = useState(false);
     const [quitWaitsConfirmation, setQuitWaitsConfirmation] = useState(false);
+    const { activeStep, goToNextStep, goToPrevStep } = useWizardContext();
 
-    const goToNextStep = (activeStep, onNext) => {
+    const onNext = (activeStep, onNext) => {
         // first reset validation state to default
         setIsFormValid(true);
 
@@ -286,7 +297,7 @@ const Footer = ({
                     setStepNotification({ step: activeStep.id, ...ex });
                 },
                 onSuccess: () => {
-                    onNext();
+                    goToNextStep();
 
                     // Reset the state after the onNext call. Otherwise,
                     // React will try to render the current step again.
@@ -309,7 +320,7 @@ const Footer = ({
                     setStepNotification({ step: activeStep.id, ...ex });
                 },
                 onSuccess: () => {
-                    onNext();
+                    goToNextStep();
 
                     // Reset the state after the onNext call. Otherwise,
                     // React will try to render the current step again.
@@ -318,109 +329,99 @@ const Footer = ({
                 },
             });
         } else {
-            onNext();
+            goToNextStep();
         }
     };
 
-    const goToPreviousStep = (activeStep, onBack, errorHandler) => {
+    const onBack = (activeStep, errorHandler) => {
         // first reset validation state to default
         setIsFormValid(true);
-        onBack();
+        goToPrevStep();
     };
 
     if (isInProgress) {
         return null;
     }
 
+    const isFirstScreen = (
+        activeStep.id === "installation-language" || (activeStep.id === "installation-method" && !isBootIso)
+    );
+
+    const nextButtonText = (
+        activeStep.id === "installation-review"
+            ? getScenario(storageScenarioId).buttonLabel
+            : _("Next")
+    );
+
+    const reviewWarning = getScenario(storageScenarioId).screenWarning;
+
     return (
-        <WizardFooter>
-            <WizardContextConsumer>
-                {({ activeStep, onNext, onBack }) => {
-                    const isFirstScreen = (
-                        activeStep.id === "installation-language" || (activeStep.id === "installation-method" && !isBootIso)
-                    );
-                    const nextButtonText = (
-                        activeStep.id === "installation-review"
-                            ? getScenario(storageScenarioId).buttonLabel
-                            : _("Next")
-                    );
-                    const nextButtonVariant = (
-                        activeStep.id === "installation-review"
-                            ? "warning"
-                            : "primary"
-                    );
-
-                    const reviewWarning = getScenario(storageScenarioId).screenWarning;
-
-                    return (
-                        <Stack hasGutter>
-                            {activeStep.id === "installation-review" &&
-                            nextWaitsConfirmation &&
-                            <ReviewConfigurationConfirmModal
-                              idPrefix={activeStep.id}
-                              onNext={onNext}
-                              setNextWaitsConfirmation={setNextWaitsConfirmation}
-                              storageScenarioId={storageScenarioId}
-                            />}
-                            {quitWaitsConfirmation &&
-                            <QuitInstallationConfirmModal
-                              exitGui={exitGui}
-                              setQuitWaitsConfirmation={setQuitWaitsConfirmation}
-                              isBootIso={isBootIso}
-                            />}
-                            {activeStep.id === "installation-method" && !isFormValid &&
-                                <HelperText id="next-helper-text">
-                                    <HelperTextItem
-                                      variant="indeterminate">
-                                        {_("To continue, select the devices to install to.")}
-                                    </HelperTextItem>
-                                </HelperText>}
-                            {activeStep.id === "installation-review" && reviewWarning &&
-                                <HelperText id="review-warning-text">
-                                    <HelperTextItem
-                                      variant="warning"
-                                      hasIcon>
-                                        {reviewWarning}
-                                    </HelperTextItem>
-                                </HelperText>}
-                            <ActionList>
-                                <Button
-                                  id="installation-back-btn"
-                                  variant="secondary"
-                                  isDisabled={isFirstScreen}
-                                  onClick={() => goToPreviousStep(
-                                      activeStep,
-                                      onBack,
-                                      onCritFail({ context: cockpit.format(N_("Error was hit when going back from $0."), activeStep.name) })
-                                  )}>
-                                    {_("Back")}
-                                </Button>
-                                <Button
-                                  id="installation-next-btn"
-                                  variant={nextButtonVariant}
-                                  isDisabled={
-                                      !isFormValid ||
-                                      nextWaitsConfirmation
-                                  }
-                                  onClick={() => goToNextStep(activeStep, onNext)}>
-                                    {nextButtonText}
-                                </Button>
-                                <Button
-                                  id="installation-quit-btn"
-                                  style={{ marginLeft: "var(--pf-v5-c-wizard__footer-cancel--MarginLeft)" }}
-                                  variant="link"
-                                  onClick={() => {
-                                      setQuitWaitsConfirmation(true);
-                                  }}
-                                >
-                                    {isBootIso ? _("Reboot") : _("Quit")}
-                                </Button>
-                            </ActionList>
-                        </Stack>
-                    );
-                }}
-            </WizardContextConsumer>
-        </WizardFooter>
+        <WizardFooterWrapper
+        >
+            <Stack hasGutter>
+                {activeStep.id === "installation-review" &&
+                    nextWaitsConfirmation &&
+                    <ReviewConfigurationConfirmModal
+                      idPrefix={activeStep.id}
+                      setInstallationProgress={setInstallationProgress}
+                      setNextWaitsConfirmation={setNextWaitsConfirmation}
+                      storageScenarioId={storageScenarioId}
+                    />}
+                {quitWaitsConfirmation &&
+                    <QuitInstallationConfirmModal
+                      exitGui={exitGui}
+                      setQuitWaitsConfirmation={setQuitWaitsConfirmation}
+                      isBootIso={isBootIso}
+                    />}
+                {activeStep.id === "installation-method" && !isFormValid &&
+                    <HelperText id="next-helper-text">
+                        <HelperTextItem
+                          variant="indeterminate">
+                            {_("To continue, select the devices to install to.")}
+                        </HelperTextItem>
+                    </HelperText>}
+                {activeStep.id === "installation-review" && reviewWarning &&
+                    <HelperText id="review-warning-text">
+                        <HelperTextItem
+                          variant="warning"
+                          hasIcon>
+                            {reviewWarning}
+                        </HelperTextItem>
+                    </HelperText>}
+                <ActionList>
+                    <Button
+                      id="installation-back-btn"
+                      variant="secondary"
+                      isDisabled={isFirstScreen}
+                      onClick={() => onBack(
+                          activeStep,
+                          onCritFail({ context: cockpit.format(N_("Error was hit when going back from $0."), activeStep.name) })
+                      )}>
+                        {_("Back")}
+                    </Button>
+                    <Button
+                      id="installation-next-btn"
+                      variant={activeStep.id === "installation-review" ? "warning" : "primary"}
+                      isDisabled={
+                          !isFormValid ||
+                            nextWaitsConfirmation
+                      }
+                      onClick={() => onNext(activeStep)}>
+                        {nextButtonText}
+                    </Button>
+                    <Button
+                      id="installation-quit-btn"
+                      style={{ marginLeft: "var(--pf-v5-c-wizard__footer-cancel--MarginLeft)" }}
+                      variant="link"
+                      onClick={() => {
+                          setQuitWaitsConfirmation(true);
+                      }}
+                    >
+                        {isBootIso ? _("Reboot") : _("Quit")}
+                    </Button>
+                </ActionList>
+            </Stack>
+        </WizardFooterWrapper>
     );
 };
 

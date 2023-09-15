@@ -190,7 +190,7 @@ export const ReviewConfiguration = ({ deviceData, diskSelection, language, osRel
     );
 };
 
-export const ReviewConfigurationConfirmModal = ({ idPrefix, onNext, setNextWaitsConfirmation, storageScenarioId }) => {
+export const ReviewConfigurationConfirmModal = ({ idPrefix, setInstallationProgress, setNextWaitsConfirmation, storageScenarioId }) => {
     const scenario = getScenario(storageScenarioId);
     return (
         <Modal
@@ -200,7 +200,7 @@ export const ReviewConfigurationConfirmModal = ({ idPrefix, onNext, setNextWaits
                 key="confirm"
                 onClick={() => {
                     setNextWaitsConfirmation(false);
-                    onNext();
+                    setInstallationProgress(true);
                 }}
                 variant={scenario.buttonVariant}
               >
