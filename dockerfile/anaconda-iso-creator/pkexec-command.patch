@@ -1,0 +1,24 @@
+From d4f2e0c87c650251e2072142d5d47b415f3c1ce7 Mon Sep 17 00:00:00 2001
+From: Adam Kankovsky <adamkankovsky@gmail.com>
+Date: Thu, 3 Oct 2024 09:52:26 +0200
+Subject: [PATCH] Update cleanup for pkexec command
+
+---
+ share/templates.d/99-generic/runtime-cleanup.tmpl | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/share/templates.d/99-generic/runtime-cleanup.tmpl b/share/templates.d/99-generic/runtime-cleanup.tmpl
+index 12c45189..200e3bed 100644
+--- a/share/templates.d/99-generic/runtime-cleanup.tmpl
++++ b/share/templates.d/99-generic/runtime-cleanup.tmpl
+@@ -291,7 +291,6 @@ removefrom openssh-clients /usr/libexec/*
+ removefrom openssh-server /etc/ssh/* /usr/libexec/openssh/sftp-server
+ removefrom pam /usr/share/locale/*
+ removefrom policycoreutils /etc/* /usr/bin/* /usr/share/locale/*
+-removefrom polkit /usr/bin/*
+ removefrom popt /usr/share/locale/*
+ removefrom procps-ng /usr/bin/free /usr/bin/pgrep /usr/bin/pkill
+ removefrom procps-ng /usr/bin/pmap /usr/bin/pwdx /usr/bin/skill /usr/bin/slabtop
+-- 
+2.46.2
+
