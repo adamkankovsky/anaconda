@@ -11,8 +11,8 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
 # Public License for more details.  You should have received a copy of the
 # GNU General Public License along with this program; if not, write to the
-# Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-# 02110-1301, USA.  Any Red Hat trademarks that are incorporated in the
+# Free Software Foundation, Inc., 31 Milk Street #960789 Boston, MA
+# 02196 USA.  Any Red Hat trademarks that are incorporated in the
 # source code or documentation are not subject to the GNU General Public
 # License and may only be used or replicated with the express permission of
 # Red Hat, Inc.
@@ -21,11 +21,15 @@ from dasbus.server.interface import dbus_interface
 from dasbus.server.property import emits_properties_changed
 from dasbus.typing import *  # pylint: disable=wildcard-import
 
+from pyanaconda.core.constants import DisplayModes
 from pyanaconda.modules.common.base import KickstartModuleInterfaceTemplate
 from pyanaconda.modules.common.constants.objects import USER_INTERFACE
 from pyanaconda.modules.common.structures.policy import PasswordPolicy
+from pyanaconda.modules.common.structures.product import ProductData
 
 __all__ = ["UIInterface"]
+
+from pyanaconda.modules.common.structures.rdp import RdpData
 
 
 @dbus_interface(USER_INTERFACE.interface_name)
@@ -36,6 +40,10 @@ class UIInterface(KickstartModuleInterfaceTemplate):
         """Connect the signals."""
         super().connect_signals()
         self.watch_property("PasswordPolicies", self.implementation.password_policies_changed)
+        self.watch_property("DisplayMode", self.implementation.display_mode_changed)
+        self.watch_property("DisplayModeNonInteractive",
+                            self.implementation.display_mode_nonInteractive_changed)
+        self.watch_property("Rdp", self.implementation.rdp_changed)
 
     @property
     def PasswordPolicies(self) -> Dict[Str, Structure]:
