@@ -1,0 +1,44 @@
+<image schemaversion="7.4" name="workstation-boot">
+  <description type="system">
+    <author>Anaconda Team</author>
+    <contact>anaconda-devel@lists.fedoraproject.org</contact>
+    <specification>Minimal boot ISO for Anaconda (GTK/TUI)</specification>
+  </description>
+
+  <!-- Profiles -->
+  <profiles>
+    <profile name="Workstation-Disk" description="Workstation Edition Install Disk"/>
+  </profiles>
+
+  <!-- Preferences bound to the selected profile (like your server config) -->
+  <preferences profiles="Workstation-Disk" arch="x86_64,aarch64,ppc64le,s390x">
+    <packagemanager>dnf</packagemanager>
+    <type image="iso" primary="true" filesystem="squashfs"
+          kernelcmdline="rd.live.image rd.neednet=0">
+      <bootloader name="grub2" timeout="5"/>
+    </type>
+  </preferences>
+
+  <!-- Repositories are injected via --set-repo/--add-repo -->
+
+  <!-- Bootstrap -->
+  <packages type="bootstrap">
+    <package>dnf5</package>
+  </packages>
+
+  <!-- Image payload -->
+  <packages type="image" profiles="Workstation-Disk">
+    <package>anaconda</package>
+    <package>anaconda-install-img-deps</package>
+    <package>kernel</package>
+    <package>dracut</package>
+    <package>dracut-live</package>
+    <package>dracut-network</package>
+    <package>NetworkManager</package>
+    <package>systemd</package>
+    <package>coreutils</package>
+    <package>bash</package>
+    <package>util-linux</package>
+    <package>shadow-utils</package>
+  </packages>
+</image>

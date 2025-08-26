@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# Entrypoint for KIWI-based ISO builds (GTK/TUI & WebUI).
+# - Optionally clones fedora-kiwi-descriptions when KIWI_FILE=Fedora.kiwi
+# - Creates a local repo from /anaconda-rpms
+# - Calls a kiwi-build wrapper (upstream if present, otherwise local)
+# - Exports resulting *.iso files into /images
+set -euo pipefail
+
+# --- helper to trim whitespace ---
+trim() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"   # ltrim
+  s="${s%"${s##*[![:space:]]}"}"   # rtrim
+  printf '%s' "$s"
+}
+
+# ========= defaults (overridable via -e) =========
+: "${FKD_REF:=rawhide}"                # branch/commit for fedora-kiwi-descriptions
+: "${KIWI_FILE:=Fedora.kiwi}"          # .kiwi file to build (Fedora.kiwi or your own)
+: "${IMAGE_TYPE:=iso}"                 # e.g. iso, oem, oci
+: "${IMAGE_PROFILE:=Workstation-Live}" # e.g. Workstation-Live, Workstation-Disk
+: "${OS_REPO:=}"                       # override base OS repo (rpm-md URL)
+: "${EXTRA_REPO:=}"                    # optional extra repo (rpm-md URL)
+: "${WEBUI:=0}"                        # 1 => add webui pkgs + kernel cmdline (only for local wrapper)
+: "${DEBUG:=0}"                        # 1 => add --debug and bash -x
+: "${IMAGE_RELEASE:=}"                 # optional release id for bundling
+: "${DISABLE_SELINUX_LABELING:=0}"     # 1 => disable selinux relabel during build (host policy mismatch workaround)
+
+# --- sanitize inputs ---
+FKD_REF="$(trim "$FKD_REF")"
+KIWI_FILE="$(trim "$KIWI_FILE")"
+IMAGE_TYPE="$(trim "$IMAGE_TYPE")"
+IMAGE_PROFILE="$(trim "$IMAGE_PROFILE")"
+OS_REPO="$(trim "$OS_REPO")"
+EXTRA_REPO="$(trim "$EXTRA_REPO")"
+WEBUI="$(trim "$WEBUI")"
+DEBUG="$(trim "$DEBUG")"
+IMAGE_RELEASE="$(trim "$IMAGE_RELEASE")"
+DISABLE_SELINUX_LABELING="$(trim "$DISABLE_SELINUX_LABELING")"
+
+[[ "$DEBUG" == "1" ]] && set -x
+
+DESC_DIR="/kiwi/descriptions"
+
+# Optionally disable SELinux relabel (useful when host policy < target policy)
+if [[ "$DISABLE_SELINUX_LABELING" == "1" ]]; then
+  echo "Disabling SELinux relabel in kiwi runtime (selinux: false)..."
+  printf 'selinux: false\n' > /etc/kiwi.yml
+fi
+
+# ========= ensure descriptions tree =========
+# If user asked for Fedora.kiwi and it's not present, clone upstream repo.
+if [[ "$KIWI_FILE" == "Fedora.kiwi" && ! -f "${DESC_DIR}/Fedora.kiwi" ]]; then
+  echo "No ${DESC_DIR}/Fedora.kiwi found; cloning fedora-kiwi-descriptions (${FKD_REF})…"
+  tmpdir="$(mktemp -d)"; trap 'rm -rf "$tmpdir"' EXIT
+  git clone --depth 1 -b "$FKD_REF" https://pagure.io/fedora-kiwi-descriptions.git "$tmpdir"
+  cp -a "$tmpdir/"* "${DESC_DIR}/"
+fi
+
+# ========= resolve kiwi-build wrapper =========
+WRAP_UPSTREAM="${DESC_DIR}/kiwi-build"
+WRAP_LOCAL="/kiwi-build"
+if [[ -x "$WRAP_UPSTREAM" ]]; then
+  KIWI_BUILD="$WRAP_UPSTREAM"
+elif [[ -x "$WRAP_LOCAL" ]]; then
+  KIWI_BUILD="$WRAP_LOCAL"
+else
+  echo "ERROR: missing kiwi-build wrapper (checked $WRAP_UPSTREAM and $WRAP_LOCAL)" >&2
+  exit 2
+fi
+
+# Make KIWI_FILE absolute for checks, but wrapper očekává basename + --kiwi-description-dir
+case "$KIWI_FILE" in
+  /*) abs_kiwi_file="$KIWI_FILE" ;;
+  *)  abs_kiwi_file="${DESC_DIR}/$KIWI_FILE" ;;
+esac
+[[ -r "$abs_kiwi_file" ]] || { echo "ERROR: kiwi file not found: $abs_kiwi_file"; ls -l "$DESC_DIR" || true; exit 3; }
+kiwi_file_basename="$(basename "$abs_kiwi_file")"
+
+# ========= local anaconda repo =========
+INPUT_RPMS=/anaconda-rpms
+REPO_DIR=/tmp/anaconda-rpms
+mkdir -p "$REPO_DIR"
+# Copy RPMs if provided; OK if empty
+cp -a "${INPUT_RPMS}/." "$REPO_DIR" 2>/dev/null || true
+if compgen -G "${REPO_DIR}/*.rpm" >/dev/null; then
+  echo "Creating local repo from Anaconda RPMs in ${REPO_DIR}..."
+  createrepo_c "$REPO_DIR" || true
+fi
+
+# ========= compose extra kiwi args (ONLY for local wrapper) =========
+arch="$(uname -m)"
+# shellcheck disable=SC1091
+. /etc/os-release || true
+
+extra_args=()
+
+# Add our local repo if it exists
+if [[ -d "$REPO_DIR/repodata" ]]; then
+  extra_args+=( --add-repo "type=rpm-md,alias=localanaconda,source=file://${REPO_DIR}" )
+fi
+
+# Base OS repos: either OS_REPO override, or distro-specific defaults
+if [[ -n "$OS_REPO" ]]; then
+  extra_args+=( --set-repo "type=rpm-md,alias=os,source=${OS_REPO}" )
+else
+  case "${ID:-fedora}" in
+    fedora)
+      branch="rawhide"
+      extra_args+=( --set-repo "type=rpm-md,alias=os,source=http://dl.fedoraproject.org/pub/fedora/linux/development/${branch}/Everything/${arch}/os/" )
+      ;;
+    rhel|centos|almalinux|rocky)
+      if [[ -z "${BASEOS_REPO:-}" || -z "${APPSTREAM_REPO:-}" ]]; then
+        echo "ERROR: On ${ID:-}, provide OS_REPO or both BASEOS_REPO and APPSTREAM_REPO." >&2
+        exit 40
+      fi
+      extra_args+=( --set-repo "type=rpm-md,alias=baseos,source=${BASEOS_REPO}" )
+      extra_args+=( --add-repo "type=rpm-md,alias=appstream,source=${APPSTREAM_REPO}" )
+      ;;
+    *)
+      branch="rawhide"
+      extra_args+=( --set-repo "type=rpm-md,alias=os,source=http://dl.fedoraproject.org/pub/fedora/linux/development/${branch}/Everything/${arch}/os/" )
+      ;;
+  esac
+fi
+
+# Optional extra repo (e.g. staging/COPR)
+if [[ -n "$EXTRA_REPO" ]]; then
+  extra_args+=( --add-repo "type=rpm-md,alias=extra,source=${EXTRA_REPO}" )
+fi
+
+# WebUI mode: add minimal required packages and enforce kernel cmdline
+if [[ "$WEBUI" == "1" ]]; then
+  extra_args+=( --add-package anaconda-webui --add-package cockpit-ws --add-package cockpit-bridge )
+  extra_args+=( --set-type-attr "kernelcmdline=rd.live.image inst.webui rd.neednet=1" )
+fi
+
+# Pokud používáme UPSTREAM wrapper, NEPOSÍLÁME extra argumenty (neumí je -> chyby).
+args_to_pass=()
+if [[ "$KIWI_BUILD" == "$WRAP_LOCAL" ]]; then
+  args_to_pass=("${extra_args[@]}")
+else
+  echo "Upstream kiwi-build detected — skipping extra repo/type args to avoid KIWI parsing errors."
+fi
+
+# ========= run wrapper from description dir (so relative Fedora.kiwi works) =========
+out="/work/result"
+echo "Using wrapper: $KIWI_BUILD"
+echo "Running kiwi-build: file=${kiwi_file_basename} type=${IMAGE_TYPE} profile=${IMAGE_PROFILE}"
+
+set +e
+pushd "$DESC_DIR" >/dev/null
+"$KIWI_BUILD" ${DEBUG:+--debug} \
+  --kiwi-description-dir="." \
+  --kiwi-file="${kiwi_file_basename}" \
+  --output-dir="${out}" \
+  --image-type="${IMAGE_TYPE}" \
+  --image-profile="${IMAGE_PROFILE}" \
+  ${IMAGE_RELEASE:+--image-release="${IMAGE_RELEASE}"} \
+  -- "${args_to_pass[@]}"
+status=$?
+popd >/dev/null
+set -e
+
+# ========= export artifacts =========
+if [[ "$status" -eq 0 ]]; then
+  mkdir -p /images
+  # některé wrappery dávají ISO do out-build/, jiné do out/
+  find "${out}-build" -maxdepth 1 -type f -name '*.iso' -print -exec cp -v {} /images/ \; 2>/dev/null || true
+  find "${out}"       -maxdepth 1 -type f -name '*.iso' -print -exec cp -v {} /images/ \; 2>/dev/null || true
+  chown -R --reference="${INPUT_RPMS}" /images 2>/dev/null || true
+fi
+
+exit "$status"

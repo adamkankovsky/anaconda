@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<image schemaversion="7.4" name="workstation-webui">
+  <description type="system">
+    <author>Anaconda Team</author>
+    <contact>anaconda-devel@lists.fedoraproject.org</contact>
+    <specification>Boot ISO for Anaconda WebUI</specification>
+  </description>
+
+  <profiles>
+    <profile name="Workstation-Disk" description="Workstation Edition Install Disk"/>
+  </profiles>
+
+  <preferences>
+    <packagemanager>dnf</packagemanager>
+    <type image="iso" primary="true" filesystem="squashfs"
+          bootloader="grub2"
+          kernelcmdline="rd.live.image inst.webui rd.neednet=1"/>
+  </preferences>
+
+  <!-- Repositories are injected at build time via --set-repo/--add-repo -->
+
+  <packages type="bootstrap">
+    <package>dnf</package>
+  </packages>
+
+  <packages type="image" profiles="Workstation-Disk">
+    <package>anaconda</package>
+    <package>anaconda-install-img-deps</package>
+    <package>anaconda-webui</package>
+    <package>cockpit-ws</package>
+    <package>cockpit-bridge</package>
+    <package>kernel</package>
+    <package>dracut</package>
+    <package>dracut-live</package>
+    <package>dracut-network</package>
+    <package>NetworkManager</package>
+    <package>systemd</package>
+    <package>coreutils</package>
+    <package>bash</package>
+    <package>util-linux</package>
+    <package>shadow-utils</package>
+  </packages>
+</image>

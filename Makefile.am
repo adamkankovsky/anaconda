@@ -112,6 +112,14 @@ RPM_DOCKERFILE ?= $(srcdir)/dockerfile/anaconda-rpm
 RELEASE_DOCKERFILE ?= $(srcdir)/dockerfile/anaconda-release
 ISO_CREATOR_DOCKERFILE ?= $(srcdir)/dockerfile/anaconda-iso-creator
 LIVE_ISO_CREATOR_DOCKERFILE ?= $(srcdir)/dockerfile/anaconda-live-iso-creator
+KIWI_ISO_CREATOR_DOCKERFILE ?= $(srcdir)/dockerfile/anaconda-kiwi-iso-creator
+KIWI_ISO_CREATOR_NAME ?= $(CONTAINER_REGISTRY)/rhinstaller/anaconda-kiwi-iso-creator
+KIWI_FILE ?= Fedora.kiwi
+KIWI_IMAGE_TYPE ?= iso
+KIWI_IMAGE_PROFILE ?= Workstation-Live      # for GTK/TUI live installer
+KIWI_FKD_REF ?= rawhide                     # fedora-kiwi-descriptions ref
+KIWI_OS_REPO ?=                             # leave empty to auto-use Rawhide Everything
+KIWI_EXTRA_REPO ?=
 CI_NAME ?= $(CONTAINER_REGISTRY)/rhinstaller/anaconda-ci
 RPM_NAME ?= $(CONTAINER_REGISTRY)/rhinstaller/anaconda-rpm
 RELEASE_NAME ?= $(CONTAINER_REGISTRY)/rhinstaller/anaconda-release
@@ -238,6 +246,28 @@ anaconda-iso-creator-build:
 	--build-arg=image=$(BASE_CONTAINER) \
 	--tag $(ISO_CREATOR_NAME):$(CI_TAG) \
 	$(ISO_CREATOR_DOCKERFILE)
+
+anaconda-kiwi-iso-creator-build:
+	@echo "Building KIWI ISO creator container (using pre-rendered files)"
+	@if [ ! -f "$(KIWI_ISO_CREATOR_DOCKERFILE)/Dockerfile" ]; then \
+		echo "ERROR: $(KIWI_ISO_CREATOR_DOCKERFILE)/Dockerfile not found."; exit 2; \
+	fi
+	@if [ ! -f "$(KIWI_ISO_CREATOR_DOCKERFILE)/kiwi-build" ] || [ ! -f "$(KIWI_ISO_CREATOR_DOCKERFILE)/kiwi-build-webui" ]; then \
+		echo "ERROR: kiwi-build or kiwi-build-webui not found."; \
+		echo "Hint: run your template render step (e.g. 'make -f Makefile.am reload-infra') first."; \
+		exit 3; \
+	fi
+	@if [ ! -f "$(KIWI_ISO_CREATOR_DOCKERFILE)/workstation-boot.kiwi" ] || [ ! -f "$(KIWI_ISO_CREATOR_DOCKERFILE)/workstation-webui.kiwi" ]; then \
+		echo "ERROR: workstation-*.kiwi not found in $(KIWI_ISO_CREATOR_DOCKERFILE)"; exit 4; \
+	fi
+	@sudo -nv 2>/dev/null || echo "You will be prompted for sudo password to build rootful image"
+	sudo $(CONTAINER_ENGINE) build \
+		$(CONTAINER_BUILD_ARGS) \
+		--pull=newer \
+		$(CONTAINER_ADD_ARGS) \
+		--build-arg=image=$(BASE_CONTAINER) \
+		--tag $(KIWI_ISO_CREATOR_NAME):$(CI_TAG) \
+		$(KIWI_ISO_CREATOR_DOCKERFILE)
 
 anaconda-live-iso-creator-build:
 	@test "$(GIT_BRANCH)" != "rhel-10" || ( echo "The Live ISO builds are not supported on rhel-10!"; exit 99 )
@@ -404,6 +434,44 @@ container-webui-iso-build:
 	@test "$(GIT_BRANCH)" != "rhel-10" || ( echo "The webui ISO builds are not supported on rhel-10!"; exit 99 )
 
 	$(MAKE) -f ./Makefile.am container-iso-build CONTAINER_ADD_ARGS="--entrypoint=/lorax-build-webui"
+
+# GTK/TUI live ISO (Workstation-Live)
+container-kiwi-iso-build:
+	@if ! ls $(srcdir)/result/build/01-rpm-build/anaconda-*.rpm >/dev/null 2>/dev/null; then \
+		echo "You need to have Anaconda RPMs built first."; \
+		echo "Run: make -f ./Makefile.am container-rpms-scratch"; \
+		exit 1; \
+	fi
+	@echo 'If you need VPN access, use `CONTAINER_ADD_ARGS=--network=host`'
+	mkdir -p $(srcdir)/result/iso
+	mkdir -p $(srcdir)/result/kiwi-work
+	mkdir -p $(srcdir)/result/kiwi-cache
+
+	sudo $(CONTAINER_ENGINE) run --rm \
+		--privileged \
+		--pull=never \
+		-v $(srcdir)/result/build/01-rpm-build:/anaconda-rpms:ro,z \
+		-v $(srcdir)/result/iso:/images:Z \
+		-v $(srcdir)/result/kiwi-work:/work:Z \
+		-v $(srcdir)/result/kiwi-cache:/var/tmp:Z \
+		-v $(srcdir)/result/kiwi-cache:/var/cache/kiwi:Z \
+		-e FKD_REF="$(strip $(KIWI_FKD_REF))" \
+		-e KIWI_FILE="$(strip $(KIWI_FILE))" \
+		-e IMAGE_TYPE="$(strip $(KIWI_IMAGE_TYPE))" \
+		-e IMAGE_PROFILE="$(strip $(KIWI_IMAGE_PROFILE))" \
+		$(if $(KIWI_OS_REPO),-e OS_REPO="$(strip $(KIWI_OS_REPO))",) \
+		$(if $(KIWI_EXTRA_REPO),-e EXTRA_REPO="$(strip $(KIWI_EXTRA_REPO))",) \
+		$(CONTAINER_ADD_ARGS) \
+		$(KIWI_ISO_CREATOR_NAME):$(CI_TAG)
+
+	@echo "ISO is stored in $(srcdir)/result/iso/"
+
+# WebUI ISO (stejný profil, ale kernelcmdline + balíčky se doplní přes --set-type-attr/--add-package)
+container-kiwi-webui-iso-build:
+	@test "$(GIT_BRANCH)" != "rhel-10" || ( echo "The WebUI ISO builds are not supported on rhel-10!"; exit 99 )
+	$(MAKE) -f ./Makefile.am container-kiwi-iso-build \
+		KIWI_IMAGE_PROFILE="Workstation-Live" \
+		CONTAINER_ADD_ARGS='$(CONTAINER_ADD_ARGS) -e WEBUI=1'
 
 # Build LIVE ISO from Anaconda RPM files build here
 container-live-iso-build:
