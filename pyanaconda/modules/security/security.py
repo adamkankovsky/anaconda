@@ -31,8 +31,8 @@ from pyanaconda.modules.common.structures.requirement import Requirement
 from pyanaconda.modules.security.constants import SELinuxMode
 from pyanaconda.modules.security.kickstart import SecurityKickstartSpecification
 from pyanaconda.modules.security.security_interface import SecurityInterface
-from pyanaconda.modules.security.installation import ConfigureSELinuxTask, \
-    RealmDiscoverTask, RealmJoinTask, ConfigureAuthselectTask, \
+from pyanaconda.modules.security.installation import AUTHSELECT_ARGS, \
+    ConfigureSELinuxTask, RealmDiscoverTask, RealmJoinTask, ConfigureAuthselectTask, \
     ConfigureAuthconfigTask, ConfigureFingerprintAuthTask, PreconfigureFIPSTask, ConfigureFIPSTask
 
 from pyanaconda.anaconda_loggers import get_module_logger
@@ -97,6 +97,9 @@ class SecurityService(KickstartService):
 
         if self.authselect:
             data.authselect.authselect = " ".join(self.authselect)
+        elif self.fingerprint_auth_enabled:
+            auth_args = AUTHSELECT_ARGS
+            data.authselect.authselect = " ".join(auth_args)
 
         if self.authconfig:
             data.authconfig.authconfig = " ".join(self.authconfig)
