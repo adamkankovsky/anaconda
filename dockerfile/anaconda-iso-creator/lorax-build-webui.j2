@@ -95,13 +95,25 @@ add_copr_repo() {
 add_copr_repo "ANACONDA_WEBUI_PR" "rhinstaller-anaconda-webui" "anaconda-webui"
 add_copr_repo "COCKPIT_PR" "cockpit-project-cockpit" "cockpit"
 
+# PROTOTYPE (boot.iso-without-firefox.rpm research spike): ship Firefox as a
+# Flatpak from Flathub, pre-installed into the image at build time, instead of
+# firefox.rpm - see the `flatpak install` runcmd lines added to lorax's
+# runtime-postinstall.tmpl by adjust-templates-for-webui.patch. The exact
+# commits are pinned directly in that patch (NOT passed via
+# --add-template-var: lorax only threads those into templates added with
+# --add-template, not into its own built-in runtime-postinstall.tmpl - found
+# out the hard way from a real build failing with `NameError: Undefined`).
+# Re-pin deliberately in the patch when testing a newer Firefox, e.g. via:
+#   flatpak remote-info --log flathub org.mozilla.firefox//stable
+#   flatpak remote-info --log flathub org.freedesktop.Platform//25.08
+
 lorax -p Fedora -v "$VERSION_ID" -r "$VERSION_ID" \
       --volid Fedora-S-dvd-x86_64-$VOLID_VERSION \
       --sharedir ./templates.d/99-generic/ \
       -s http://dl.fedoraproject.org/pub/fedora/linux/development/$FEDORA_VERSION/Everything/x86_64/os/ \
       -s file://$REPO_DIR/ \
       "${ADDITIONAL_SOURCES[@]}" \
-      -i anaconda-webui -i cockpit-ws -i cockpit-bridge -i firefox -i dbus-glib --rootfs-size 5 \
+      -i anaconda-webui -i cockpit-ws -i cockpit-bridge -i flatpak -i dbus-glib --rootfs-size 6 \
       "$@" \
       output || cp *.log "$OUT_DIR"
 
