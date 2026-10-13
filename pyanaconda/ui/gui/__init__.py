@@ -785,7 +785,7 @@ class GraphicalUserInterface(UserInterface):
             dlg.window.destroy()
 
         # the dialog has the only button -- "Exit installer", so just do so
-        util.ipmi_report(constants.IPMI_ABORTED)
+        util.ipmi_abort()
         sys.exit(1)
 
     @async_action_wait
