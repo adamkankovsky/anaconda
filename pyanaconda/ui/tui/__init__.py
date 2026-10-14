@@ -33,12 +33,12 @@ from pyanaconda import ui
 from pyanaconda.anaconda_loggers import get_module_logger
 from pyanaconda.core.constants import QUIT_MESSAGE
 from pyanaconda.core.threads import thread_manager
-from pyanaconda.core.util import ipmi_abort
 from pyanaconda.flags import flags
+from pyanaconda.modules.common.constants.services import BOSS
 from pyanaconda.ui.tui.hubs.summary import SummaryHub
 from pyanaconda.ui.tui.signals import SendMessageSignal
 from pyanaconda.ui.tui.spokes import StandaloneSpoke
-from pyanaconda.ui.tui.tuiobject import IpmiErrorDialog
+from pyanaconda.ui.tui.tuiobject import InstallationErrorDialog
 
 log = get_module_logger(__name__)
 
@@ -73,7 +73,7 @@ def exception_msg_handler(signal, data):
 
 
 def tui_quit_callback(data):
-    ipmi_abort()
+    BOSS.get_proxy().RequestAbort()
 
 
 class TextUserInterface(ui.UserInterface):
@@ -300,7 +300,7 @@ class TextUserInterface(ui.UserInterface):
             # If we're in cmdline mode, just exit.
             return
 
-        error_window = IpmiErrorDialog(message)
+        error_window = InstallationErrorDialog(message)
         ScreenHandler.push_screen_modal(error_window)
 
     def showDetailedError(self, message, details, buttons=None):
