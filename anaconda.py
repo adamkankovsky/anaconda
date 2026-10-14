@@ -152,6 +152,41 @@ def setup_environment():
     if "EDITOR" not in os.environ and os.path.isfile("/etc/profile.d/nano-default-editor.sh"):
         os.environ["EDITOR"] = "/usr/bin/nano"
 
+
+def determine_exit_code(boss_proxy):
+    """Map the Boss installation outcome to a process exit code.
+
+    :param boss_proxy: a DBus proxy of the Boss service
+    :return: 0 if the installation succeeded, otherwise 1
+    """
+    from pyanaconda import anaconda_loggers
+    from pyanaconda.modules.common.constants.installation import InstallationStatus
+
+    log = anaconda_loggers.get_main_logger()
+    status = boss_proxy.InstallationStatus
+
+    if status == InstallationStatus.NOT_STARTED.value:
+        # No installation was ever attempted (e.g. rescue mode, or any other
+        # workflow that never drives Boss's install task) and nothing failed.
+        message = "Installation result: SUCCESS (no installation was attempted)"
+        log.info(message)
+        print(message)
+        return 0
+
+    if status != InstallationStatus.SUCCEEDED.value:
+        message = "Installation result: FAILURE (status=%s, reason=%s)" % (
+            status, boss_proxy.InstallationFailureReason
+        )
+        log.error(message)
+        print(message)
+        return 1
+
+    message = "Installation result: SUCCESS"
+    log.info(message)
+    print(message)
+    return 0
+
+
 if __name__ == "__main__":
     # check if the CLI help is requested and return it at once,
     # without importing random stuff and spamming stdout
@@ -603,5 +638,8 @@ if __name__ == "__main__":
 
     anaconda.intf.setup(ksdata)
     anaconda.intf.run()
+
+    from pyanaconda.modules.common.constants.services import BOSS
+    sys.exit(determine_exit_code(BOSS.get_proxy()))
 
 # vim:tw=78:ts=4:et:sw=4
