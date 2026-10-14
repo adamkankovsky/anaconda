@@ -942,12 +942,22 @@ class RunInstallationTask(InstallationTask):
         # Boss has no UserInterface; during the installation queue, tasks may call
         # errorHandler.cb() for non-fatal errors. Temporarily install a D-Bus proxy
         # that forwards dialogs to the progress spoke in the UI process.
+        #
+        # Also force ksprompt for the duration of the queue: _RemoteErrorUI
+        # always forwards dialogs over D-Bus regardless of interactivity, so
+        # ErrorHandler.cb() must not short-circuit to a NonInteractiveError
+        # (which would misclassify a failure as UNHANDLED_EXCEPTION instead
+        # of INSTALLATION_ERROR) just because this is a non-interactive
+        # kickstart install.
         previous_ui = errorHandler.ui
+        previous_ksprompt = flags.flags.ksprompt
         errorHandler.ui = _RemoteErrorUI(self)
+        flags.flags.ksprompt = True
         try:
             queue.start()
         finally:
             errorHandler.ui = previous_ui
+            flags.flags.ksprompt = previous_ksprompt
 
         # done
         self.report_progress(_("Complete!"), step_number=self.steps)

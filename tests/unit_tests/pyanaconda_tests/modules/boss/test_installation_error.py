@@ -20,6 +20,7 @@ import unittest
 from unittest.mock import Mock
 
 from pyanaconda.errors import ERROR_RAISE, ScriptError, errorHandler
+from pyanaconda.flags import flags
 from pyanaconda.installation_tasks import Task, TaskQueue
 from pyanaconda.modules.boss.install_manager.installation_category_interface import (
     CategoryReportTaskInterface,
@@ -55,9 +56,11 @@ class InstallationErrorHandlerTestCase(unittest.TestCase):
 
     def setUp(self):
         self.previous_ui = errorHandler.ui
+        self.previous_ksprompt = flags.ksprompt
 
     def tearDown(self):
         errorHandler.ui = self.previous_ui
+        flags.ksprompt = self.previous_ksprompt
 
     def test_non_critical_error_forwarded_during_installation(self):
         """Non-critical errors during installation are forwarded to the UI."""
@@ -103,6 +106,28 @@ class InstallationErrorHandlerTestCase(unittest.TestCase):
         assert received[0][1] == InstallationErrorDialogType.FATAL_ERROR
         assert "42" in received[0][0]
         assert "script failed" in received[0][0]
+
+    def test_ksprompt_forced_during_queue_and_restored_after(self):
+        """ksprompt is forced True for the queue run and restored afterward.
+
+        errorHandler.ui is always _RemoteErrorUI during the install queue,
+        which forwards dialogs over D-Bus regardless of interactivity -- so
+        ksprompt must not stay at whatever value a non-interactive kickstart
+        install left it at, and must not leak out after the queue finishes.
+        """
+        flags.ksprompt = False
+        observed = []
+
+        task = TestRunInstallationWithErrors(Mock())
+        task._prepare_installation = lambda: task._make_queue(
+            "Installation queue",
+            [("Observe ksprompt", lambda: observed.append(flags.ksprompt))],
+        )
+
+        task.run()
+
+        assert observed == [True]
+        assert flags.ksprompt is False
 
     def test_error_raised_dbus_signal_drops_failure_reason(self):
         """The public ErrorRaised D-Bus signal only takes (message, detail_type).

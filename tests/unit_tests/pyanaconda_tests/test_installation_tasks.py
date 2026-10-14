@@ -19,8 +19,13 @@
 #
 import unittest
 from textwrap import dedent
+from unittest.mock import Mock, patch
 
-from pyanaconda.installation_tasks import Task, TaskQueue
+from dasbus.error import DBusError
+
+from pyanaconda.errors import ERROR_CONTINUE, ERROR_RAISE, ScriptError
+from pyanaconda.installation_tasks import DBusTask, Task, TaskQueue
+from pyanaconda.modules.common.errors.installation import PayloadInstallationError
 
 
 class InstallTasksTestCase(unittest.TestCase):
@@ -264,3 +269,54 @@ class InstallTasksTestCase(unittest.TestCase):
         assert self._task_completed_count == 4
         assert self._queue_started_count == 3
         assert self._queue_completed_count == 3
+
+
+class DBusTaskErrorHandlingTestCase(unittest.TestCase):
+    """Check how DBusTask._run() reacts to a failing DBus task."""
+
+    def setUp(self):
+        self.task_proxy = Mock()
+        self.task_proxy.Name = "Remote task"
+
+    @patch("pyanaconda.installation_tasks.errorHandler")
+    @patch("pyanaconda.installation_tasks.sync_run_task")
+    def test_script_error_is_re_raised(self, sync_run_task, error_handler):
+        """A ScriptError propagates instead of being swallowed by sys.exit(0).
+
+        Swallowing it with sys.exit(0) corrupted the task's stored failure:
+        Task.finish() would later re-raise a meaningless SystemExit(0)
+        instead of the real ScriptError.
+        """
+        error = ScriptError(1, "script failed")
+        sync_run_task.side_effect = error
+        error_handler.cb.return_value = ERROR_RAISE
+
+        task = DBusTask(self.task_proxy)
+
+        with self.assertRaises(ScriptError):
+            task.start()
+
+        error_handler.cb.assert_called_once_with(error)
+
+    @patch("pyanaconda.installation_tasks.errorHandler")
+    @patch("pyanaconda.installation_tasks.sync_run_task")
+    def test_other_dbus_error_re_raised_too(self, sync_run_task, error_handler):
+        """Any DBusError (not just ScriptError) is re-raised the same way."""
+        error = PayloadInstallationError("payload failed")
+        sync_run_task.side_effect = error
+        error_handler.cb.return_value = ERROR_RAISE
+
+        task = DBusTask(self.task_proxy)
+
+        with self.assertRaises(PayloadInstallationError):
+            task.start()
+
+    @patch("pyanaconda.installation_tasks.errorHandler")
+    @patch("pyanaconda.installation_tasks.sync_run_task")
+    def test_dbus_error_not_re_raised_on_continue(self, sync_run_task, error_handler):
+        """A DBusError is swallowed if the error handler says to continue."""
+        sync_run_task.side_effect = DBusError("recoverable")
+        error_handler.cb.return_value = ERROR_CONTINUE
+
+        task = DBusTask(self.task_proxy)
+        task.start()  # must not raise

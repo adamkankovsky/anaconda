@@ -17,7 +17,6 @@
 # License and may only be used or replicated with the express permission of
 # Red Hat, Inc.
 #
-import sys
 import time
 
 from dasbus.error import DBusError
@@ -25,8 +24,6 @@ from dasbus.error import DBusError
 from pyanaconda.anaconda_loggers import get_module_logger
 from pyanaconda.core.signal import Signal
 from pyanaconda.errors import ERROR_RAISE, errorHandler
-from pyanaconda.flags import flags
-from pyanaconda.modules.common.errors.runtime import ScriptError
 from pyanaconda.modules.common.task import sync_run_task
 
 log = get_module_logger(__name__)
@@ -298,14 +295,12 @@ class DBusTask(BaseTask):
             # Run the task.
             sync_run_task(self._task_proxy)
         except DBusError as e:
-            # Handle a remote error.
-            if isinstance(e, ScriptError):
-                flags.ksprompt = True
-                errorHandler.cb(e)
-                sys.exit(0)
-            else:
-                if errorHandler.cb(e) == ERROR_RAISE:
-                    raise
+            # Handle a remote error. ksprompt is forced for the whole queue
+            # by RunInstallationTask._run_installation(), since errorHandler.ui
+            # is always _RemoteErrorUI here, which forwards dialogs over
+            # D-Bus regardless of interactivity.
+            if errorHandler.cb(e) == ERROR_RAISE:
+                raise
         finally:
             # Disconnect from the signal.
             self._task_proxy.ProgressChanged.disconnect()
