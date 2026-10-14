@@ -76,8 +76,18 @@ class ProgressSpoke(StandaloneSpoke, InstallationProgressErrorMixin):
         gtk_call_once(self._spinner.stop)
         gtk_call_once(self._spinner.hide)
 
-        # Finish the installation task. Re-raise tracebacks if any.
-        self._task_proxy.Finish()
+        # Finish the installation task. Boss already reported the outcome
+        # (IPMI, kickstart error scripts) once the task's status became
+        # terminal -- just log a re-raised failure here instead of letting it
+        # reach AnacondaExceptionHandler and report the same outcome a second
+        # time.
+        try:
+            self._task_proxy.Finish()
+        except Exception:  # pylint: disable=broad-except
+            log.exception("The installation task finished with an error.")
+            # Don't continue into the success navigation below -- the quit
+            # button stays available so the user can still leave.
+            return
 
         if conf.license.eula:
             self.set_warning(_("Use of this product is subject to the license agreement "

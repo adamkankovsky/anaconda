@@ -58,6 +58,7 @@ class ProgressSpoke(StandaloneTUISpoke, InstallationProgressErrorMixin):
         self.title = N_("Progress")
         self._task_proxy = None
         self._stepped = False
+        self._installation_failed = False
         self.initialize_done()
 
     @property
@@ -115,6 +116,10 @@ class ProgressSpoke(StandaloneTUISpoke, InstallationProgressErrorMixin):
         loop = App.get_event_loop()
         loop.process_signals(return_after=ScreenReadySignal)
 
+        # The installation failed; quit instead of showing the success screen.
+        if self._installation_failed:
+            raise ExitMainLoop()
+
         runtime_proxy = RUNTIME.get_proxy()
         reboot_data = RebootData.from_structure(runtime_proxy.Reboot)
         # kickstart install, continue automatically if reboot or shutdown selected
@@ -130,8 +135,21 @@ class ProgressSpoke(StandaloneTUISpoke, InstallationProgressErrorMixin):
         if self._stepped:
             print('')
 
-        # Finish the installation task. Re-raise tracebacks if any.
-        self._task_proxy.Finish()
+        # Finish the installation task. Boss already reported the outcome
+        # (IPMI, kickstart error scripts) once the task's status became
+        # terminal -- just log a re-raised failure here instead of letting it
+        # reach AnacondaExceptionHandler and report the same outcome a second
+        # time.
+        try:
+            self._task_proxy.Finish()
+        except Exception:  # pylint: disable=broad-except
+            log.exception("The installation task finished with an error.")
+            # Don't show the success message, but still stop show_all() from
+            # waiting for ScreenReadySignal forever.
+            self._installation_failed = True
+            loop = App.get_event_loop()
+            loop.enqueue_signal(ScreenReadySignal(self))
+            return
 
         if conf.license.eula:
             # Notify user about the EULA (if any).
