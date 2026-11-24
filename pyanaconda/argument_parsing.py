@@ -417,6 +417,7 @@ def getArgumentParser(version_string, boot_cmdline=None):
     # Interface
     ap.add_argument("-G", "--graphical", dest="display_mode", action="store_const", const=DisplayModes.GUI,
                     default=DisplayModes.GUI, help=help_parser.help_text("graphical"))
+    ap.add_argument("--gtk", action="store_true", help=help_parser.help_text("gtk"))
     ap.add_argument("-T", "--text", dest="display_mode", action="store_const", const=DisplayModes.TUI,
                     help=help_parser.help_text("text"))
     ap.add_argument("-C", "--cmdline", action=SetCmdlineMode, nargs=0,

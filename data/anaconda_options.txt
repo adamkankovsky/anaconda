@@ -10,6 +10,9 @@ Force graphical installation. A graphical installation implies that the installe
 boot up into graphical.target, using whichever display manager is in use by the default desktop
 (gdm for GNOME, kdm for KDE).
 
+gtk
+Use GTK instead of Web UI in graphical mode on a boot ISO.
+
 text
 Force text mode installation. This also implies that the installed system will boot up in text mode
 instead of to the graphical login screen.

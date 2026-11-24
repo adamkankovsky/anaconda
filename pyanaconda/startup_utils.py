@@ -214,7 +214,7 @@ def fallback_to_tui_if_gtk_ui_is_not_available(anaconda):
 
     Also take into account Web UI.
     """
-    if anaconda.gui_mode and not anaconda.is_webui_supported:
+    if anaconda.gui_mode and not anaconda.use_webui:
         import pyanaconda.ui
 
         mods = (tup[1] for tup in pkgutil.iter_modules(pyanaconda.ui.__path__, "pyanaconda.ui."))

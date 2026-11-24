@@ -153,9 +153,9 @@ class Anaconda:
         return self._display_mode == DisplayModes.TUI
 
     @property
-    def is_webui_supported(self):
-        "Report if webui package is installed"
-        return os.path.exists("/usr/share/cockpit/anaconda-webui")
+    def use_webui(self):
+        """Prefer Web UI when installed unless GTK was requested."""
+        return not self.opts.gtk and os.path.exists("/usr/share/cockpit/anaconda-webui")
 
     def log_display_mode(self):
         if not self.display_mode:
@@ -211,7 +211,7 @@ class Anaconda:
         if self._intf:
             raise RuntimeError("Second attempt to initialize the InstallInterface")
 
-        if self.gui_mode and self.is_webui_supported:
+        if self.gui_mode and self.use_webui:
             from pyanaconda.ui.webui import CockpitUserInterface
             self._intf = CockpitUserInterface(
                 None,

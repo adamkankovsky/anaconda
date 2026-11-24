@@ -82,8 +82,13 @@ def parse_arguments(argv=None, boot_cmdline=None):
     from pyanaconda.core.util import get_anaconda_version_string
 
     ap = getArgumentParser(get_anaconda_version_string(), boot_cmdline)
-
-    return ap.parse_args(argv, boot_cmdline=boot_cmdline)
+    opts = ap.parse_args(argv, boot_cmdline=boot_cmdline)
+    if opts.gtk:
+        if opts.webui_remote:
+            ap.error("inst.gtk cannot be combined with inst.webui.remote")
+        if opts.liveinst:
+            ap.error("inst.gtk is not supported on Live media")
+    return opts
 
 
 def _write_remote_debugger_config(remote_debugger_config):

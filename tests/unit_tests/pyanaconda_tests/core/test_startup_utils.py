@@ -328,7 +328,7 @@ class TestUIHelpers(unittest.TestCase):
                          expected_display_mode,
                          expected_rd_output):
             mocked_anaconda.gui_mode = gui_mode
-            mocked_anaconda.is_webui_supported = webui_supported
+            mocked_anaconda.use_webui = webui_supported
 
             # prefilled values
             mocked_anaconda.display_mode = ""
