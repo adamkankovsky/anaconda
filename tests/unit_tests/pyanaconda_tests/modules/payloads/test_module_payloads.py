@@ -32,6 +32,7 @@ from pyanaconda.modules.common.errors.payload import (
     SourceSetupError,
     SourceTearDownError,
 )
+from pyanaconda.modules.common.structures.kickstart import KickstartReport
 from pyanaconda.modules.common.task import Task
 from pyanaconda.modules.payloads.base.initialization import (
     SetUpSourcesTask,
@@ -112,6 +113,26 @@ class PayloadsInterfaceTestCase(TestCase):
         """Test kickstart processing when no payload set or created based on KS data."""
         self.payload_interface.ReadKickstart("")
         assert self.payload_interface.ActivePayload == ""
+
+    @patch_dbus_publish_object
+    def test_kickstart_url_with_unsupported_protocol(self, _publisher):
+        """Report an unsupported URL protocol as a Kickstart error."""
+        cases = (
+            ("nfs://example.com:/tree", "nfs --server=<server> --dir=</path>"),
+            ("unknown://example.com/tree", "Supported protocols: http, https, ftp, file."),
+        )
+        for url, expected_message in cases:
+            with self.subTest(url=url):
+                report = KickstartReport.from_structure(
+                    self.payload_interface.ReadKickstart(f"# Installation source\nurl --url={url}")
+                )
+                assert not report.is_valid()
+                error, = report.error_messages
+                assert error.line_number == 2
+                assert expected_message in error.message
+                assert url not in error.message
+                assert not self.payload_interface.Kickstarted
+                assert self.payload_interface.ActivePayload == ""
 
     @patch_dbus_publish_object
     def test_create_dnf_payload(self, publisher):

@@ -19,6 +19,8 @@
 #
 import copy
 
+from pykickstart.errors import KickstartParseError
+
 from pyanaconda.anaconda_loggers import get_module_logger
 from pyanaconda.core.constants import (
     URL_TYPE_BASEURL,
@@ -26,6 +28,7 @@ from pyanaconda.core.constants import (
     URL_TYPE_MIRRORLIST,
     URL_TYPES,
 )
+from pyanaconda.core.i18n import _
 from pyanaconda.core.payload import ProxyString, ProxyStringError
 from pyanaconda.modules.common.errors.general import InvalidValueError
 from pyanaconda.modules.common.structures.payload import RepoConfigurationData
@@ -101,6 +104,17 @@ class URLSourceModule(PayloadSourceBase, RepositorySourceMixin, RPMSourceMixin):
             repo_data.url = data.url.metalink
             repo_data.type = URL_TYPE_METALINK
 
+        if not self._is_protocol_supported(repo_data.url):
+            if repo_data.url.startswith("nfs:"):
+                message = _("The Kickstart 'url' command does not support NFS. "
+                            "Use 'nfs --server=<server> --dir=</path>' instead.")
+            else:
+                protocols = ", ".join(p.rstrip(":") for p in self.supported_protocols)
+                message = _("Unsupported protocol in the Kickstart 'url' command. "
+                            "Supported protocols: {}.").format(protocols)
+
+            raise KickstartParseError(message, lineno=data.url.lineno)
+
         repo_data.proxy = data.url.proxy
         repo_data.ssl_verification_enabled = not data.url.noverifyssl
         repo_data.ssl_configuration.ca_cert_path = data.url.sslcacert or ""
@@ -128,14 +142,13 @@ class URLSourceModule(PayloadSourceBase, RepositorySourceMixin, RPMSourceMixin):
 
         data.url.seen = True
 
+    def _is_protocol_supported(self, url):
+        """Check whether the URL uses a supported protocol."""
+        return url.startswith(tuple(self.supported_protocols))
+
     def _validate_configuration(self, configuration):
         """Validate the specified source configuration."""
-        is_protocol_supported = any(
-            configuration.url.startswith(p)
-            for p in self.supported_protocols
-        )
-
-        if not is_protocol_supported:
+        if not self._is_protocol_supported(configuration.url):
             raise InvalidValueError(
                 "Invalid protocol of an URL source: '{}'"
                 "".format(configuration.url)
